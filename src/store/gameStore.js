@@ -15,7 +15,7 @@ function initialOwnedState() {
   return owned;
 }
 
-function calcBps(owned, prestigeMultiplier, boostMultiplier) {
+function calcBps(owned, prestigeMultiplier, boostMultiplier, purchaseMultiplier = 1) {
   let total = new BigNumber(0);
   CHARACTERS.forEach((c) => {
     const count = owned[c.id] || 0;
@@ -23,16 +23,20 @@ function calcBps(owned, prestigeMultiplier, boostMultiplier) {
       total = total.plus(new BigNumber(c.baseBps).times(count));
     }
   });
-  return total.times(prestigeMultiplier).times(boostMultiplier).toFixed(2);
+  return total
+    .times(prestigeMultiplier)
+    .times(boostMultiplier)
+    .times(purchaseMultiplier)
+    .toFixed(2);
 }
 
 // Earnings accrued while the player was away. Boost is excluded (it expires),
 // time is capped, and short gaps are ignored. Returns null if nothing to grant.
-function computeOffline(owned, prestigeMultiplier, elapsedMsRaw) {
+function computeOffline(owned, prestigeMultiplier, purchaseMultiplier, elapsedMsRaw) {
   const elapsedMs = Math.min(Math.max(0, elapsedMsRaw), OFFLINE_CAP_MS);
   const secs = Math.floor(elapsedMs / 1000);
   if (secs < MIN_OFFLINE_SEC) return null;
-  const offlineBps = calcBps(owned, prestigeMultiplier, 1);
+  const offlineBps = calcBps(owned, prestigeMultiplier, 1, purchaseMultiplier);
   const earned = new BigNumber(offlineBps).times(secs).toFixed(0);
   if (!new BigNumber(earned).gt(0)) return null;
   return { earned, secs };
@@ -52,6 +56,7 @@ export const useGameStore = create((set, get) => ({
   tickInterval: null,
   username: "",
   hasRemovedAds: false,
+  purchaseMultiplier: 1,     // permanent paid multiplier (Starter Pack = 2x); survives prestige
   pendingOffline: null,      // BP earned while away, awaiting "welcome back" collect
   offlineSeconds: 0,         // how long the player was away (capped)
   backgroundedAt: 0,         // timestamp ms when app went to background
@@ -60,7 +65,16 @@ export const useGameStore = create((set, get) => ({
 
   setUsername: (name) => set({ username: name }),
 
-  removeAds: () => set({ hasRemovedAds: true }),
+  removeAds: () => { set({ hasRemovedAds: true }); get().save(); },
+
+  // Starter Pack IAP: permanent 2x on all earnings. Idempotent — re-buying
+  // (or a restore) won't stack past 2x.
+  buyStarterPack: () => {
+    set({ purchaseMultiplier: 2 });
+    const state = get();
+    set({ bps: calcBps(state.owned, state.prestigeMultiplier, state.boostMultiplier, 2) });
+    get().save();
+  },
 
   tick: () => {
     const state = get();
@@ -73,7 +87,7 @@ export const useGameStore = create((set, get) => ({
       boostMul = 1;
     }
 
-    const bps = calcBps(state.owned, state.prestigeMultiplier, boostMul);
+    const bps = calcBps(state.owned, state.prestigeMultiplier, boostMul, state.purchaseMultiplier);
     const gained = new BigNumber(bps).div(1000 / TICK_MS).toFixed(0);
     const newPoints = add(state.points, gained);
     const newTotal = add(state.totalEarned, gained);
@@ -94,6 +108,7 @@ export const useGameStore = create((set, get) => ({
       .plus(new BigNumber(state.bps).times(0.01))
       .times(state.prestigeMultiplier)
       .times(state.boostMultiplier)
+      .times(state.purchaseMultiplier)
       .toFixed(0);
 
     const newPoints = add(state.points, tapValue);
@@ -113,7 +128,7 @@ export const useGameStore = create((set, get) => ({
 
     const newOwned = { ...state.owned, [characterId]: currentOwned + 1 };
     const newPoints = sub(state.points, cost);
-    const bps = calcBps(newOwned, state.prestigeMultiplier, state.boostMultiplier);
+    const bps = calcBps(newOwned, state.prestigeMultiplier, state.boostMultiplier, state.purchaseMultiplier);
 
     set({ owned: newOwned, points: newPoints, bps });
     get().save();
@@ -203,6 +218,7 @@ export const useGameStore = create((set, get) => ({
       const offline = computeOffline(
         state.owned,
         state.prestigeMultiplier,
+        state.purchaseMultiplier,
         Date.now() - state.backgroundedAt
       );
       if (offline) {
@@ -226,6 +242,7 @@ export const useGameStore = create((set, get) => ({
       owned: state.owned,
       prestigeCount: state.prestigeCount,
       prestigeMultiplier: state.prestigeMultiplier,
+      purchaseMultiplier: state.purchaseMultiplier,
       username: state.username,
       hasRemovedAds: state.hasRemovedAds,
       lastSaved: Date.now(),
@@ -241,10 +258,11 @@ export const useGameStore = create((set, get) => ({
 
       const owned = data.owned || initialOwnedState();
       const prestigeMultiplier = data.prestigeMultiplier || 1;
+      const purchaseMultiplier = data.purchaseMultiplier || 1;
 
       // Earn while away since the last save.
       const offline = data.lastSaved
-        ? computeOffline(owned, prestigeMultiplier, Date.now() - data.lastSaved)
+        ? computeOffline(owned, prestigeMultiplier, purchaseMultiplier, Date.now() - data.lastSaved)
         : null;
       const pendingOffline = offline ? offline.earned : null;
       const offlineSeconds = offline ? offline.secs : 0;
@@ -258,6 +276,7 @@ export const useGameStore = create((set, get) => ({
         owned,
         prestigeCount: data.prestigeCount || 0,
         prestigeMultiplier,
+        purchaseMultiplier,
         username: data.username || "",
         hasRemovedAds: data.hasRemovedAds || false,
         pendingOffline,

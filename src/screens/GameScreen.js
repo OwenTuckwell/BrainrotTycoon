@@ -6,6 +6,7 @@ import {
 import { useGameStore } from "../store/gameStore";
 import { fmt, bn } from "../utils/bigNum";
 import { showRewardedAd } from "../ads";
+import { purchaseProduct, PRODUCTS } from "../iap";
 import { COLORS } from "../theme";
 
 function fmtDuration(totalSec) {
@@ -21,6 +22,7 @@ export default function GameScreen() {
     points, bps, tapScreen, prestigeCount, prestigeMultiplier,
     canPrestige, prestige, boostActive, boostUntil, activateBoost, hasRemovedAds,
     pendingOffline, offlineSeconds, collectOffline, doubleOffline,
+    purchaseMultiplier, buyStarterPack, removeAds,
   } = useGameStore();
 
   const scaleAnim = useRef(new Animated.Value(1)).current;
@@ -50,6 +52,14 @@ export default function GameScreen() {
 
   async function handleWatchAd() {
     if (await showRewardedAd()) activateBoost(120000, 2);
+  }
+
+  async function handleStarterPack() {
+    if (await purchaseProduct(PRODUCTS.starterPack)) buyStarterPack();
+  }
+
+  async function handleRemoveAds() {
+    if (await purchaseProduct(PRODUCTS.removeAds)) removeAds();
   }
 
   const boostSecsLeft = boostActive ? Math.max(0, Math.ceil((boostUntil - Date.now()) / 1000)) : 0;
@@ -117,13 +127,16 @@ export default function GameScreen() {
         </TouchableOpacity>
       )}
 
-      {/* Paid boost */}
-      <TouchableOpacity
-        style={styles.paidButton}
-        onPress={() => Alert.alert("💰 Starter Pack", "£0.99 for permanent 2x boost!\n(IAP coming soon)")}
-      >
-        <Text style={styles.paidButtonText}>⚡ Starter Pack — £0.99</Text>
-      </TouchableOpacity>
+      {/* Starter Pack IAP — permanent 2x */}
+      {purchaseMultiplier > 1 ? (
+        <View style={[styles.paidButton, styles.paidButtonOwned]}>
+          <Text style={styles.paidButtonText}>⚡ Starter Pack Active — 2x forever</Text>
+        </View>
+      ) : (
+        <TouchableOpacity style={styles.paidButton} onPress={handleStarterPack}>
+          <Text style={styles.paidButtonText}>⚡ Starter Pack — £0.99 (permanent 2x)</Text>
+        </TouchableOpacity>
+      )}
 
       {/* Prestige */}
       {prestigeReady && (
@@ -136,10 +149,7 @@ export default function GameScreen() {
 
       {/* Remove ads */}
       {!hasRemovedAds && (
-        <TouchableOpacity
-          style={styles.removeAdsButton}
-          onPress={() => Alert.alert("🚫 Remove Ads", "£1.99 to remove all ads!\n(IAP coming soon)")}
-        >
+        <TouchableOpacity style={styles.removeAdsButton} onPress={handleRemoveAds}>
           <Text style={styles.removeAdsText}>🚫 Remove Ads — £1.99</Text>
         </TouchableOpacity>
       )}
@@ -208,6 +218,7 @@ const styles = StyleSheet.create({
     width: "100%",
     alignItems: "center",
   },
+  paidButtonOwned: { opacity: 0.6 },
   paidButtonText: { color: "#000", fontWeight: "900", fontSize: 14 },
   prestigeButton: {
     backgroundColor: "#8b00ff",
