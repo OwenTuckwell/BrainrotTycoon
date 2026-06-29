@@ -6,6 +6,8 @@ import { add, sub, mul, costForNext, gte, bn } from "../utils/bigNum";
 
 const SAVE_KEY = "brainrot_save_v1";
 const TICK_MS = 100; // update every 100ms
+const OFFLINE_CAP_MS = 8 * 60 * 60 * 1000; // earnings while away cap at 8h
+const MIN_OFFLINE_SEC = 60; // don't bug the player for a quick app switch
 
 function initialOwnedState() {
   const owned = {};
@@ -24,6 +26,18 @@ function calcBps(owned, prestigeMultiplier, boostMultiplier) {
   return total.times(prestigeMultiplier).times(boostMultiplier).toFixed(2);
 }
 
+// Earnings accrued while the player was away. Boost is excluded (it expires),
+// time is capped, and short gaps are ignored. Returns null if nothing to grant.
+function computeOffline(owned, prestigeMultiplier, elapsedMsRaw) {
+  const elapsedMs = Math.min(Math.max(0, elapsedMsRaw), OFFLINE_CAP_MS);
+  const secs = Math.floor(elapsedMs / 1000);
+  if (secs < MIN_OFFLINE_SEC) return null;
+  const offlineBps = calcBps(owned, prestigeMultiplier, 1);
+  const earned = new BigNumber(offlineBps).times(secs).toFixed(0);
+  if (!new BigNumber(earned).gt(0)) return null;
+  return { earned, secs };
+}
+
 export const useGameStore = create((set, get) => ({
   // --- state ---
   points: "0",
@@ -38,6 +52,9 @@ export const useGameStore = create((set, get) => ({
   tickInterval: null,
   username: "",
   hasRemovedAds: false,
+  pendingOffline: null,      // BP earned while away, awaiting "welcome back" collect
+  offlineSeconds: 0,         // how long the player was away (capped)
+  backgroundedAt: 0,         // timestamp ms when app went to background
 
   // --- actions ---
 
@@ -111,6 +128,22 @@ export const useGameStore = create((set, get) => ({
     });
   },
 
+  // Dismiss the welcome-back modal (offline BP was already credited on load).
+  collectOffline: () => set({ pendingOffline: null, offlineSeconds: 0 }),
+
+  // Watch-ad reward: grant the offline haul a second time, for 2x total.
+  doubleOffline: () => {
+    const state = get();
+    if (!state.pendingOffline) return;
+    set({
+      points: add(state.points, state.pendingOffline),
+      totalEarned: add(state.totalEarned, state.pendingOffline),
+      pendingOffline: null,
+      offlineSeconds: 0,
+    });
+    get().save();
+  },
+
   canPrestige: () => {
     const state = get();
     // First prestige at 1T. Each subsequent prestige needs 50x more lifetime BP.
@@ -156,6 +189,35 @@ export const useGameStore = create((set, get) => ({
     set({ tickInterval: null });
   },
 
+  // App sent to background: stop the loop, persist, and stamp the time away.
+  handleBackground: () => {
+    get().stopTicking();
+    get().save();
+    set({ backgroundedAt: Date.now() });
+  },
+
+  // App resumed: credit time spent in the background, then resume ticking.
+  handleForeground: () => {
+    const state = get();
+    if (state.backgroundedAt) {
+      const offline = computeOffline(
+        state.owned,
+        state.prestigeMultiplier,
+        Date.now() - state.backgroundedAt
+      );
+      if (offline) {
+        set({
+          points: add(state.points, offline.earned),
+          totalEarned: add(state.totalEarned, offline.earned),
+          pendingOffline: offline.earned,
+          offlineSeconds: offline.secs,
+        });
+      }
+      set({ backgroundedAt: 0 });
+    }
+    get().startTicking();
+  },
+
   save: async () => {
     const state = get();
     const saveData = {
@@ -166,6 +228,7 @@ export const useGameStore = create((set, get) => ({
       prestigeMultiplier: state.prestigeMultiplier,
       username: state.username,
       hasRemovedAds: state.hasRemovedAds,
+      lastSaved: Date.now(),
     };
     await AsyncStorage.setItem(SAVE_KEY, JSON.stringify(saveData));
   },
@@ -175,14 +238,30 @@ export const useGameStore = create((set, get) => ({
       const raw = await AsyncStorage.getItem(SAVE_KEY);
       if (!raw) return;
       const data = JSON.parse(raw);
+
+      const owned = data.owned || initialOwnedState();
+      const prestigeMultiplier = data.prestigeMultiplier || 1;
+
+      // Earn while away since the last save.
+      const offline = data.lastSaved
+        ? computeOffline(owned, prestigeMultiplier, Date.now() - data.lastSaved)
+        : null;
+      const pendingOffline = offline ? offline.earned : null;
+      const offlineSeconds = offline ? offline.secs : 0;
+
+      const basePoints = data.points || "0";
+      const baseTotal = data.totalEarned || "0";
+
       set({
-        points: data.points || "0",
-        totalEarned: data.totalEarned || "0",
-        owned: data.owned || initialOwnedState(),
+        points: pendingOffline ? add(basePoints, pendingOffline) : basePoints,
+        totalEarned: pendingOffline ? add(baseTotal, pendingOffline) : baseTotal,
+        owned,
         prestigeCount: data.prestigeCount || 0,
-        prestigeMultiplier: data.prestigeMultiplier || 1,
+        prestigeMultiplier,
         username: data.username || "",
         hasRemovedAds: data.hasRemovedAds || false,
+        pendingOffline,
+        offlineSeconds,
       });
     } catch (e) {
       console.warn("Failed to load save:", e);

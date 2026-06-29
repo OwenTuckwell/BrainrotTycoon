@@ -1,16 +1,25 @@
 import React, { useRef } from "react";
 import {
   View, Text, TouchableOpacity, StyleSheet, Animated,
-  ScrollView, Alert,
+  ScrollView, Alert, Modal,
 } from "react-native";
 import { useGameStore } from "../store/gameStore";
 import { fmt, bn } from "../utils/bigNum";
 import { COLORS } from "../theme";
 
+function fmtDuration(totalSec) {
+  const h = Math.floor(totalSec / 3600);
+  const m = Math.floor((totalSec % 3600) / 60);
+  if (h > 0) return `${h}h ${m}m`;
+  if (m > 0) return `${m}m`;
+  return `${totalSec}s`;
+}
+
 export default function GameScreen() {
   const {
     points, bps, tapScreen, prestigeCount, prestigeMultiplier,
     canPrestige, prestige, boostActive, boostUntil, activateBoost, hasRemovedAds,
+    pendingOffline, offlineSeconds, collectOffline, doubleOffline,
   } = useGameStore();
 
   const scaleAnim = useRef(new Animated.Value(1)).current;
@@ -34,6 +43,13 @@ export default function GameScreen() {
     );
   }
 
+  function handleDoubleOffline() {
+    // TODO: gate behind a real rewarded ad before granting the bonus
+    Alert.alert("📺 Ad", "Imagine a 30-second ad played here!", [
+      { text: "Skip (simulated)", onPress: doubleOffline },
+    ]);
+  }
+
   function handleWatchAd() {
     // TODO: wire up real ad SDK (AdMob / Unity Ads)
     // For now simulate an ad
@@ -47,6 +63,33 @@ export default function GameScreen() {
 
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.content}>
+      {/* Welcome-back / offline earnings */}
+      <Modal
+        visible={!!pendingOffline}
+        transparent
+        animationType="fade"
+        onRequestClose={collectOffline}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalCard}>
+            <Text style={styles.modalEmoji}>😴</Text>
+            <Text style={styles.modalTitle}>Welcome Back, Sigma!</Text>
+            <Text style={styles.modalSub}>
+              You were away for {fmtDuration(offlineSeconds)} and your brainrot kept cooking:
+            </Text>
+            <Text style={styles.modalAmount}>+{fmt(pendingOffline || "0")} BP</Text>
+            {!hasRemovedAds && (
+              <TouchableOpacity style={styles.modalDoubleBtn} onPress={handleDoubleOffline}>
+                <Text style={styles.modalDoubleText}>📺 Watch Ad → Double It (2x)</Text>
+              </TouchableOpacity>
+            )}
+            <TouchableOpacity style={styles.modalCollectBtn} onPress={collectOffline}>
+              <Text style={styles.modalCollectText}>Collect</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
       {/* Header stats */}
       <View style={styles.statsBox}>
         <Text style={styles.pointsText}>{fmt(points)} BP</Text>
@@ -92,7 +135,7 @@ export default function GameScreen() {
       {prestigeReady && (
         <TouchableOpacity style={styles.prestigeButton} onPress={handlePrestige}>
           <Text style={styles.prestigeButtonText}>
-            👑 GO FULL SIGMA (x{Math.pow(2, prestigeCount + 1)} forever)
+            👑 GO FULL SIGMA (x{(1 + (prestigeCount + 1) * 0.5).toFixed(1)} forever)
           </Text>
         </TouchableOpacity>
       )}
@@ -192,4 +235,43 @@ const styles = StyleSheet.create({
     marginTop: 10,
   },
   removeAdsText: { color: COLORS.muted, fontWeight: "600", fontSize: 13 },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.75)",
+    justifyContent: "center",
+    alignItems: "center",
+    padding: 24,
+  },
+  modalCard: {
+    width: "100%",
+    backgroundColor: COLORS.card,
+    borderRadius: 20,
+    padding: 24,
+    alignItems: "center",
+    borderWidth: 1,
+    borderColor: COLORS.accent,
+  },
+  modalEmoji: { fontSize: 48 },
+  modalTitle: { fontSize: 22, fontWeight: "900", color: COLORS.text, marginTop: 8 },
+  modalSub: { fontSize: 13, color: COLORS.muted, textAlign: "center", marginTop: 8, lineHeight: 18 },
+  modalAmount: { fontSize: 30, fontWeight: "900", color: COLORS.gold, marginVertical: 16 },
+  modalDoubleBtn: {
+    backgroundColor: COLORS.accent,
+    borderRadius: 12,
+    paddingVertical: 14,
+    width: "100%",
+    alignItems: "center",
+    marginBottom: 10,
+  },
+  modalDoubleText: { color: "#fff", fontWeight: "800", fontSize: 14 },
+  modalCollectBtn: {
+    backgroundColor: "transparent",
+    borderRadius: 12,
+    paddingVertical: 12,
+    width: "100%",
+    alignItems: "center",
+    borderWidth: 1,
+    borderColor: COLORS.border,
+  },
+  modalCollectText: { color: COLORS.text, fontWeight: "700", fontSize: 14 },
 });

@@ -22,7 +22,8 @@ const TAB_ICONS = {
 };
 
 export default function App() {
-  const { load, startTicking, stopTicking, save } = useGameStore();
+  const { load, startTicking, stopTicking, save, handleBackground, handleForeground } =
+    useGameStore();
 
   useEffect(() => {
     load().then(() => startTicking());
@@ -31,10 +32,9 @@ export default function App() {
 
     const sub = AppState.addEventListener("change", (state) => {
       if (state === "active") {
-        startTicking();
+        handleForeground();
       } else {
-        stopTicking();
-        save();
+        handleBackground();
       }
     });
 
