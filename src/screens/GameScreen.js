@@ -26,7 +26,7 @@ export default function GameScreen() {
   function handlePrestige() {
     Alert.alert(
       "Go Full Sigma? 👑",
-      `Reset everything but earn a ${Math.pow(2, prestigeCount + 1)}x permanent multiplier!`,
+      `Reset everything but earn a permanent ${(1 + (prestigeCount + 1) * 0.5).toFixed(1)}x multiplier on all earnings!`,
       [
         { text: "No way", style: "cancel" },
         { text: "SIGMA MODE", onPress: prestige, style: "destructive" },

@@ -113,9 +113,10 @@ export const useGameStore = create((set, get) => ({
 
   canPrestige: () => {
     const state = get();
-    // Require 1T points to first prestige, 10x more each time
+    // First prestige at 1T. Each subsequent prestige needs 50x more lifetime BP.
+    // After 10 prestiges: 1T * 50^10 ≈ 10^28 — the grind never disappears.
     const threshold = new BigNumber(1e12).times(
-      new BigNumber(10).pow(state.prestigeCount)
+      new BigNumber(50).pow(state.prestigeCount)
     );
     return bn(state.totalEarned).gte(threshold);
   },
@@ -125,7 +126,9 @@ export const useGameStore = create((set, get) => ({
     if (!get().canPrestige()) return;
 
     const newPrestigeCount = state.prestigeCount + 1;
-    const newMultiplier = Math.pow(2, newPrestigeCount); // doubles each prestige
+    // Additive +50% per prestige (not doubling). After 10: x6. After 20: x11.
+    // Game stays challenging — ads and paid boosts remain useful forever.
+    const newMultiplier = 1 + newPrestigeCount * 0.5;
 
     set({
       points: "0",

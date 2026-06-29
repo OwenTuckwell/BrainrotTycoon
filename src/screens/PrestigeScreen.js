@@ -10,8 +10,8 @@ export default function PrestigeScreen() {
 
   const thresholds = Array.from({ length: 10 }, (_, i) => {
     const count = prestigeCount + i;
-    const threshold = new BigNumber(1e12).times(new BigNumber(10).pow(count));
-    const multiplier = Math.pow(2, count + 1);
+    const threshold = new BigNumber(1e12).times(new BigNumber(50).pow(count));
+    const multiplier = (1 + (count + 1) * 0.5).toFixed(1);
     const reached = bn(totalEarned).gte(threshold);
     return { count, threshold, multiplier, reached };
   });
