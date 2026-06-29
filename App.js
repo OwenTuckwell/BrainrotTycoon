@@ -10,6 +10,7 @@ import ShopScreen from "./src/screens/ShopScreen";
 import LeaderboardScreen from "./src/screens/LeaderboardScreen";
 import PrestigeScreen from "./src/screens/PrestigeScreen";
 import { useGameStore } from "./src/store/gameStore";
+import { initAds } from "./src/ads";
 import { COLORS } from "./src/theme";
 
 const Tab = createBottomTabNavigator();
@@ -26,6 +27,7 @@ export default function App() {
     useGameStore();
 
   useEffect(() => {
+    initAds();
     load().then(() => startTicking());
 
     const saveInterval = setInterval(() => save(), 30000);

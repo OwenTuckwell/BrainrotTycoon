@@ -5,6 +5,7 @@ import {
 } from "react-native";
 import { useGameStore } from "../store/gameStore";
 import { fmt, bn } from "../utils/bigNum";
+import { showRewardedAd } from "../ads";
 import { COLORS } from "../theme";
 
 function fmtDuration(totalSec) {
@@ -43,19 +44,12 @@ export default function GameScreen() {
     );
   }
 
-  function handleDoubleOffline() {
-    // TODO: gate behind a real rewarded ad before granting the bonus
-    Alert.alert("📺 Ad", "Imagine a 30-second ad played here!", [
-      { text: "Skip (simulated)", onPress: doubleOffline },
-    ]);
+  async function handleDoubleOffline() {
+    if (await showRewardedAd()) doubleOffline();
   }
 
-  function handleWatchAd() {
-    // TODO: wire up real ad SDK (AdMob / Unity Ads)
-    // For now simulate an ad
-    Alert.alert("📺 Ad", "Imagine a 30-second ad played here!", [
-      { text: "Skip (simulated)", onPress: () => activateBoost(120000, 2) },
-    ]);
+  async function handleWatchAd() {
+    if (await showRewardedAd()) activateBoost(120000, 2);
   }
 
   const boostSecsLeft = boostActive ? Math.max(0, Math.ceil((boostUntil - Date.now()) / 1000)) : 0;
